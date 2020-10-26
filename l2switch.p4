@@ -12,6 +12,8 @@ const port_t CPU_PORT           = 0x1;
 const bit<16> ARP_OP_REQ        = 0x0001;
 const bit<16> ARP_OP_REPLY      = 0x0002;
 
+const bit<16> TYPE_IPV4         = 0x800;
+
 const bit<16> TYPE_ARP          = 0x0806;
 const bit<16> TYPE_CPU_METADATA = 0x080a;
 
@@ -26,6 +28,21 @@ header cpu_metadata_t {
     bit<8> fromCpu;
     bit<16> origEtherType;
     bit<16> srcPort;
+}
+
+header ipv4_t {
+    bit<4>    version;
+    bit<4>    ihl;
+    bit<8>    diffserv;
+    bit<16>   totalLen;
+    bit<16>   identification;
+    bit<3>    flags;
+    bit<13>   fragOffset;
+    bit<8>    ttl;
+    bit<8>    protocol;
+    bit<16>   hdrChecksum;
+    ip4Addr_t srcAddr;
+    ip4Addr_t dstAddr;
 }
 
 header arp_t {
@@ -44,6 +61,7 @@ header arp_t {
 struct headers {
     ethernet_t        ethernet;
     cpu_metadata_t    cpu_metadata;
+    ipv4_t            ipv4;
     arp_t             arp;
 }
 
@@ -61,9 +79,15 @@ parser MyParser(packet_in packet,
         packet.extract(hdr.ethernet);
         transition select(hdr.ethernet.etherType) {
             TYPE_ARP: parse_arp;
+            TYPE_IPV4: parse_ipv4;
             TYPE_CPU_METADATA: parse_cpu_metadata;
             default: accept;
         }
+    }
+
+    state parse_ipv4 {
+        packet.extract(hdr.ipv4);
+        transition accept;
     }
 
     state parse_cpu_metadata {
@@ -81,7 +105,22 @@ parser MyParser(packet_in packet,
 }
 
 control MyVerifyChecksum(inout headers hdr, inout metadata meta) {
-    apply { }
+    apply {
+        verify_checksum(true,
+            { hdr.ipv4.version,
+                hdr.ipv4.ihl,
+                hdr.ipv4.diffserv,
+                hdr.ipv4.totalLen,
+                hdr.ipv4.identification,
+                hdr.ipv4.flags,
+                hdr.ipv4.fragOffset,
+                hdr.ipv4.ttl,
+                hdr.ipv4.protocol,
+                hdr.ipv4.srcAddr,
+                hdr.ipv4.dstAddr
+            },
+            hdr.ipv4.hdrChecksum, HashAlgorithm.csum16);
+    }
 }
 
 control MyIngress(inout headers hdr,
@@ -117,20 +156,38 @@ control MyIngress(inout headers hdr,
         standard_metadata.egress_spec = CPU_PORT;
     }
 
-    table fwd_l2 {
+    action ipv4_forward(macAddr_t dstAddr, egressSpec_t port) {
+        standard_metadata.egress_spec = port;
+        hdr.ethernet.srcAddr = hdr.ethernet.dstAddr;
+        hdr.ethernet.dstAddr = dstAddr;
+        hdr.ipv4.ttl = hdr.ipv4.ttl - 1;
+    }
+
+    table arp_lpm {
         key = {
-            hdr.ethernet.dstAddr: exact;
+            hdr.arp.dstIP: exact;
         }
         actions = {
-            set_egr;
-            set_mgid;
+            send_to_cpu;
+            response_to_arp;
+            NoAction;
+        }
+        size = 1024;
+        default_action = send_to_cpu;
+    }
+
+    table ipv4_lpm {
+        key = {
+            hdr.ipv4: lpm;
+        }
+        actions = {
+            ipv4_forward;
             drop;
             NoAction;
         }
         size = 1024;
-        default_action = drop();
+        default_action = NoAction;
     }
-
 
     apply {
 
@@ -139,6 +196,11 @@ control MyIngress(inout headers hdr,
 
         if (hdr.arp.isValid() && standard_metadata.ingress_port != CPU_PORT) {
             send_to_cpu();
+        }
+
+
+        if (hdr.ipv4.isValid()) {
+            ipv4_lpm.apply();
         }
         else if (hdr.ethernet.isValid()) {
             fwd_l2.apply();
@@ -154,7 +216,23 @@ control MyEgress(inout headers hdr,
 }
 
 control MyComputeChecksum(inout headers  hdr, inout metadata meta) {
-    apply { }
+    apply {
+        update_checksum(
+            hdr.ipv4.isValid(),
+                { hdr.ipv4.version,
+                  hdr.ipv4.ihl,
+                  hdr.ipv4.diffserv,
+                  hdr.ipv4.totalLen,
+                  hdr.ipv4.identification,
+                  hdr.ipv4.flags,
+                  hdr.ipv4.fragOffset,
+                  hdr.ipv4.ttl,
+                  hdr.ipv4.protocol,
+                  hdr.ipv4.srcAddr,
+                  hdr.ipv4.dstAddr },
+                hdr.ipv4.hdrChecksum,
+                HashAlgorithm.csum16);
+    }
 }
 
 control MyDeparser(packet_out packet, in headers hdr) {
