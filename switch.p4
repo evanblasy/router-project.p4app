@@ -156,11 +156,15 @@ control MyIngress(inout headers hdr,
         standard_metadata.egress_spec = CPU_PORT;
     }
 
-    action ipv4_forward(macAddr_t dstAddr, egressSpec_t port) {
+    action ipv4_forward(macAddr_t dstAddr, port_t port) {
         standard_metadata.egress_spec = port;
         hdr.ethernet.srcAddr = hdr.ethernet.dstAddr;
         hdr.ethernet.dstAddr = dstAddr;
         hdr.ipv4.ttl = hdr.ipv4.ttl - 1;
+    }
+
+    action response_to_arp() {
+
     }
 
     table arp_lpm {
@@ -178,7 +182,7 @@ control MyIngress(inout headers hdr,
 
     table ipv4_lpm {
         key = {
-            hdr.ipv4: lpm;
+            hdr.ipv4.dstAddr: lpm;
         }
         actions = {
             ipv4_forward;
@@ -202,9 +206,9 @@ control MyIngress(inout headers hdr,
         if (hdr.ipv4.isValid()) {
             ipv4_lpm.apply();
         }
-        else if (hdr.ethernet.isValid()) {
-            fwd_l2.apply();
-        }
+        // else if (hdr.ethernet.isValid()) {
+        //     fwd_l2.apply();
+        // }
 
     }
 }
