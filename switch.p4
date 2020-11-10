@@ -58,11 +58,18 @@ header arp_t {
     ip4Addr_t dstIP;
 }
 
+header icmp_t {
+    bit<8> type;
+    bit<8> code;
+    bit<16> hdrChecksum;
+}
+
 struct headers {
     ethernet_t        ethernet;
     cpu_metadata_t    cpu_metadata;
     ipv4_t            ipv4;
     arp_t             arp;
+    icmp_t            icmp;
 }
 
 struct metadata { }
@@ -87,6 +94,7 @@ parser MyParser(packet_in packet,
 
     state parse_ipv4 {
         packet.extract(hdr.ipv4);
+        packet.extract(hdr.icmp);
         transition accept;
     }
 
@@ -163,21 +171,31 @@ control MyIngress(inout headers hdr,
         hdr.ipv4.ttl = hdr.ipv4.ttl - 1;
     }
 
-    action response_to_arp() {
+    action response_to_arp(macAddr_t dstAddr) {
+        if (hdr.arp.opcode != ARP_OP_REPLY) {
+            hdr.ethernet.dstAddr = hdr.ethernet.srcAddr;
+            hdr.ethernet.srcAddr = dstAddr;
 
+            hdr.arp.dstEth = hdr.arp.srcEth;
+            hdr.arp.srcEth = dstAddr;
+            ip4Addr_t temp = hdr.arp.srcIP; 
+            hdr.arp.srcIP = hdr.arp.dstIP;
+            hdr.arp.dstIP = temp;
+
+            hdr.arp.opcode = ARP_OP_REPLY;
+        }
     }
 
-    table arp_lpm {
+    table arp_exact {
         key = {
             hdr.arp.dstIP: exact;
         }
         actions = {
-            send_to_cpu;
             response_to_arp;
             NoAction;
         }
-        size = 1024;
-        default_action = send_to_cpu;
+        size = 64;
+        default_action = NoAction;
     }
 
     table ipv4_lpm {
@@ -193,23 +211,33 @@ control MyIngress(inout headers hdr,
         default_action = NoAction;
     }
 
+   table fwd_l2 {
+        key = {
+            hdr.ethernet.dstAddr: exact;
+        }
+        actions = {
+            set_egr;
+            set_mgid;
+            drop;
+            NoAction;
+        }
+        size = 1024;
+        default_action = drop();
+    }
+
     apply {
 
         if (standard_metadata.ingress_port == CPU_PORT)
             cpu_meta_decap();
 
         if (hdr.arp.isValid() && standard_metadata.ingress_port != CPU_PORT) {
+            arp_exact.apply();
             send_to_cpu();
-        }
-
-
-        if (hdr.ipv4.isValid()) {
+        } else if (hdr.ipv4.isValid()) {
             ipv4_lpm.apply();
+        } else if (hdr.ethernet.isValid()) {
+            fwd_l2.apply();
         }
-        // else if (hdr.ethernet.isValid()) {
-        //     fwd_l2.apply();
-        // }
-
     }
 }
 
@@ -244,6 +272,8 @@ control MyDeparser(packet_out packet, in headers hdr) {
         packet.emit(hdr.ethernet);
         packet.emit(hdr.cpu_metadata);
         packet.emit(hdr.arp);
+        packet.emit(hdr.ipv4);
+        packet.emit(hdr.icmp);
     }
 }
 

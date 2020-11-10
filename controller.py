@@ -15,28 +15,41 @@ class MacLearningController(Thread):
         self.start_wait = start_wait # time to wait for the controller to be listenning
         self.iface = sw.intfs[1].name
         self.port_for_mac = {}
+        self.mac_for_ip = {}
         self.stop_event = Event()
 
-    def addMacAddr(self, mac, port):
+    def addMacAddr(self, mac, ip, port):
         # Don't re-add the mac-port mapping if we already have it:
-        if mac in self.port_for_mac: return
-
-        self.sw.insertTableEntry(table_name='MyIngress.fwd_l2',
-                match_fields={'hdr.ethernet.dstAddr': [mac]},
-                action_name='MyIngress.set_egr',
-                action_params={'port': port})
-        self.port_for_mac[mac] = port
+        if mac not in self.port_for_mac:
+            self.sw.insertTableEntry(table_name='MyIngress.fwd_l2',
+                    match_fields={'hdr.ethernet.dstAddr': [mac]},
+                    action_name='MyIngress.set_egr',
+                    action_params={'port': port})
+            self.port_for_mac[mac] = port
+        if ip not in self.mac_for_ip:
+            self.sw.insertTableEntry(table_name='MyIngress.arp_exact',
+                    match_fields={'hdr.arp.dstIP': [ip]},
+                    action_name='MyIngress.response_to_arp',
+                    action_params={'dstAddr': mac})
+            self.sw.insertTableEntry(table_name='MyIngress.ipv4_lpm',
+                    match_fields={'hdr.ipv4.dstAddr': [ip,32]},
+                    action_name='MyIngress.ipv4_forward',
+                    action_params={'dstAddr': mac, 'port': port})
+            self.mac_for_ip[ip] = mac
 
     def handleArpReply(self, pkt):
-        self.addMacAddr(pkt[ARP].hwsrc, pkt[CPUMetadata].srcPort)
+        self.addMacAddr(pkt[ARP].hwsrc, pkt[ARP].psrc, pkt[CPUMetadata].srcPort)
         self.send(pkt)
 
     def handleArpRequest(self, pkt):
-        self.addMacAddr(pkt[ARP].hwsrc, pkt[CPUMetadata].srcPort)
+        self.addMacAddr(pkt[ARP].hwsrc, pkt[ARP].psrc, pkt[CPUMetadata].srcPort)
         self.send(pkt)
 
+    def handleIPv6Packet(self, pkt):
+        return
+
     def handlePkt(self, pkt):
-        #pkt.show2()
+        # pkt.show2()
         assert CPUMetadata in pkt, "Should only receive packets from switch with special header"
 
         # Ignore packets that the CPU sends:
