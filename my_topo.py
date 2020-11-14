@@ -16,8 +16,8 @@ class DoubleSwitchTopo(Topo):
     def __init__(self, n, **opts):
         Topo.__init__(self, **opts)
 
-        switch1 = self.addSwitch('s1')
-        switch2 = self.addSwitch('s2')
+        switch1 = self.addSwitch('s1a')
+        switch2 = self.addSwitch('s2a')
 
         cpu1 = self.addHost('cpu1')
         cpu2 = self.addHost('cpu2')

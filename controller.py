@@ -96,12 +96,18 @@ class MacLearningController(Thread):
         pkt.show2()
         self.send(pkt)
 
+    def handleOspfHello(self, pkt):
+        interface_ip = self.router_id[:-1] + str(pkt[CPUMetadata].srcPort)
+        if interface_ip not in self.interfaces:
+            self.addInterface(interface_ip, pkt[OSPF_hello].mask, pkt[OSPF_hello].helloint)
+        
+        return
+
     def handleUnknownPacket(self, pkt):
         print("UNKNOWN PACKET TYPE")
         pkt.show2()
 
     def handlePkt(self, pkt):
-        # pkt.show2()
         assert CPUMetadata in pkt, "Should only receive packets from switch with special header"
 
         # Ignore packets that the CPU sends:
@@ -115,6 +121,9 @@ class MacLearningController(Thread):
         elif IP in pkt:
             if pkt[IP].ttl == 1:
                 self.handleIPv4Ttl(pkt)
+            elif OSPF_hello in pkt:
+                # self.handleOspfHello(pkt)
+                return
         else:
             self.handleUnknownPacket(pkt)
         
@@ -173,14 +182,13 @@ class Hello_controller(Thread):
         pkt[OSPF].len = 32
         pkt[OSPF_hello].net_mask = "255.255.255.0"
         pkt[OSPF_hello].hello_int = self.hello_wait
-        pkt.show()
-        pkt.show2()
 
         self.send(pkt)
 
 
     def run(self):
         # while True:
+        time.sleep(1)
         self.send_hello()
         # time.sleep(self.hello_wait)
         # self.send_hello()

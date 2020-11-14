@@ -265,6 +265,7 @@ control MyIngress(inout headers hdr,
         }
         actions = {
             ipv4_forward;
+            set_mgid;
             drop;
             NoAction;
         }
@@ -294,6 +295,8 @@ control MyIngress(inout headers hdr,
         if (hdr.arp.isValid() && standard_metadata.ingress_port != CPU_PORT) {
             arp_exact.apply();
             tally(1);
+            send_to_cpu();
+        } else if (hdr.ospf.isValid() && standard_metadata.ingress_port != CPU_PORT) {
             send_to_cpu();
         } else if (hdr.ipv4.isValid()) {
             if(hdr.ipv4.ttl == 1) {
