@@ -2,6 +2,8 @@
 #include <core.p4>
 #include <v1model.p4>
 
+typedef bit<32> IP;
+
 typedef bit<9>  port_t;
 typedef bit<48> macAddr_t;
 typedef bit<32> ip4Addr_t;
@@ -16,6 +18,9 @@ const bit<16> TYPE_IPV4         = 0x800;
 
 const bit<16> TYPE_ARP          = 0x0806;
 const bit<16> TYPE_CPU_METADATA = 0x080a;
+
+const bit<8> TYPE_ICMP         = 0x1;
+const bit<8> TYPE_OSPF         = 0x59;
 
 
 header ethernet_t {
@@ -58,6 +63,16 @@ header arp_t {
     ip4Addr_t dstIP;
 }
 
+header ospf_t {
+    bit<8> version;
+    bit<8> type;
+    ip4Addr_t router_id;
+    bit<32> area_id;
+    bit<16> chksum;
+    bit<16> autype;
+    bit<64> auth;
+}
+
 header icmp_t {
     bit<8> type;
     bit<8> code;
@@ -70,6 +85,8 @@ struct headers {
     ipv4_t            ipv4;
     arp_t             arp;
     icmp_t            icmp;
+    ipv4_t            icmp_ipv4;
+    ospf_t            ospf;
 }
 
 struct metadata { }
@@ -94,6 +111,19 @@ parser MyParser(packet_in packet,
 
     state parse_ipv4 {
         packet.extract(hdr.ipv4);
+        transition select(hdr.ipv4.protocol) {
+            TYPE_ICMP: parse_icmp;
+            TYPE_OSPF: parse_ospf;
+            default: accept;
+        }
+    }
+
+    state parse_ospf {
+        packet.extract(hdr.ospf);
+        transition accept;
+    }
+
+    state parse_icmp {
         packet.extract(hdr.icmp);
         transition accept;
     }
@@ -134,6 +164,13 @@ control MyVerifyChecksum(inout headers hdr, inout metadata meta) {
 control MyIngress(inout headers hdr,
                   inout metadata meta,
                   inout standard_metadata_t standard_metadata) {
+
+    // 0 for IP, 1 for ARP, 2 for sent to CPU
+    counter(3, CounterType.packets) packet_counter;
+    
+    action tally(bit<32> index) {
+        packet_counter.count(index);
+    }
 
     action drop() {
         mark_to_drop();
@@ -186,6 +223,30 @@ control MyIngress(inout headers hdr,
         }
     }
 
+    action ttl_zero_response() {
+        hdr.icmp.setValid();
+        standard_metadata.egress_spec = standard_metadata.ingress_port;
+        macAddr_t temp = hdr.ethernet.dstAddr;
+        hdr.ethernet.dstAddr = hdr.ethernet.srcAddr;
+        hdr.ethernet.srcAddr = temp;
+
+        ipv4_t old_ipv4 = hdr.ipv4;
+
+        // hdr.icmp_ipv4.setValid();
+        // hdr.icmp_ipv4 = old_ipv4;
+        hdr.icmp.type = 11;
+        hdr.icmp.code = 0;
+        hdr.icmp.hdrChecksum = 0;
+
+        hdr.ipv4.protocol = TYPE_ICMP;
+        hdr.ipv4.dstAddr = old_ipv4.srcAddr;
+        hdr.ipv4.ttl = 64;
+        
+        hdr.ipv4.totalLen = 52;
+
+        truncate((bit<32>)64);
+    }
+
     table arp_exact {
         key = {
             hdr.arp.dstIP: exact;
@@ -232,12 +293,22 @@ control MyIngress(inout headers hdr,
 
         if (hdr.arp.isValid() && standard_metadata.ingress_port != CPU_PORT) {
             arp_exact.apply();
+            tally(1);
             send_to_cpu();
         } else if (hdr.ipv4.isValid()) {
-            ipv4_lpm.apply();
+            if(hdr.ipv4.ttl == 1) {
+                send_to_cpu();
+            } else {
+                ipv4_lpm.apply();
+            }
+            tally(0);
         } else if (hdr.ethernet.isValid()) {
             fwd_l2.apply();
         }
+
+       if (standard_metadata.egress_spec == CPU_PORT) {
+           tally(2);
+       } 
     }
 }
 
@@ -264,6 +335,13 @@ control MyComputeChecksum(inout headers  hdr, inout metadata meta) {
                   hdr.ipv4.dstAddr },
                 hdr.ipv4.hdrChecksum,
                 HashAlgorithm.csum16);
+
+        // update_checksum(
+        //     hdr.icmp.isValid(),
+        //         { hdr.icmp.type,
+        //           hdr.icmp.code },
+        //         hdr.icmp.hdrChecksum,
+        //         HashAlgorithm.csum16);
     }
 }
 
@@ -274,6 +352,8 @@ control MyDeparser(packet_out packet, in headers hdr) {
         packet.emit(hdr.arp);
         packet.emit(hdr.ipv4);
         packet.emit(hdr.icmp);
+        packet.emit(hdr.icmp_ipv4);
+        packet.emit(hdr.ospf);
     }
 }
 

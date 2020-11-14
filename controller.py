@@ -1,16 +1,47 @@
 from threading import Thread, Event
 from scapy.all import sendp
-from scapy.all import Packet, Ether, IP, ARP
+from scapy.all import Packet, Ether, IP, ARP, ICMP
 from async_sniff import sniff
 from cpu_metadata import CPUMetadata
+from ospf import OSPF, OSPF_hello, OSPF_LSU, LSU, TYPE_OSPF
 import time
 
 ARP_OP_REQ   = 0x0001
 ARP_OP_REPLY = 0x0002
+HELLO_INT = 30
+LSU_INT = 30
+
+class PWOSPFInterface():
+    def __init__(self, int_ip, mask, helloint):
+        self.neighbors = []
+        self.int_ip = int_ip
+        self.mask = mask
+        self.helloint = helloint
+        # indexed by ip and holds id and last hello time
+        self.neighbors = {}
+
+    def get_hello_pkt(self, id, ip):
+        if ip in self.neighbors: self.neighbors[ip] = [id,0]
+        else:
+            self.neighbors[ip] = [id,0]
+
+    def check_helloint(self):
+        remove = []
+        for key, value in self.neighbors.items():
+            if value[1] > (self.helloint * 3): remove.append(key)
+            else:
+                self.neighbors[key] = [value[0],value[1] + self.helloint]
+
+        for i in remove:
+            del self.neighbors[i]
 
 class MacLearningController(Thread):
-    def __init__(self, sw, start_wait=0.3):
+    def __init__(self, sw, router_id, area_id, lsu_int = 30, start_wait=0.3):
         super(MacLearningController, self).__init__()
+        self.router_id = router_id
+        self.area_id = area_id
+        self.lsu_int = lsu_int
+        self.interfaces = {}
         self.sw = sw
         self.start_wait = start_wait # time to wait for the controller to be listenning
         self.iface = sw.intfs[1].name
@@ -37,6 +68,9 @@ class MacLearningController(Thread):
                     action_params={'dstAddr': mac, 'port': port})
             self.mac_for_ip[ip] = mac
 
+    def addInterface(self,int_ip, mask, helloint):
+        self.interfaces[int_ip] = PWOSPFInterface(int_ip,mask,helloint)
+
     def handleArpReply(self, pkt):
         self.addMacAddr(pkt[ARP].hwsrc, pkt[ARP].psrc, pkt[CPUMetadata].srcPort)
         self.send(pkt)
@@ -45,8 +79,26 @@ class MacLearningController(Thread):
         self.addMacAddr(pkt[ARP].hwsrc, pkt[ARP].psrc, pkt[CPUMetadata].srcPort)
         self.send(pkt)
 
-    def handleIPv6Packet(self, pkt):
-        return
+    def handleIPv4Ttl(self, pkt):
+        pkt = pkt[Ether]/pkt[IP]/ICMP()/pkt[IP] # /pkt[IP].payload
+        temp = pkt[Ether].dst
+        pkt[Ether].dst = pkt[Ether].src
+        pkt[Ether].src = temp
+        temp = pkt[IP].dst
+        pkt[IP].dst = pkt[IP].src
+        pkt[IP].src = temp
+        pkt[IP].len = 52
+        pkt[ICMP].type = 11
+        pkt[ICMP].code = 0
+        pkt[IP].ttl = 64
+        del pkt[ICMP].chksum
+        del pkt[IP].chksum
+        pkt.show2()
+        self.send(pkt)
+
+    def handleUnknownPacket(self, pkt):
+        print("UNKNOWN PACKET TYPE")
+        pkt.show2()
 
     def handlePkt(self, pkt):
         # pkt.show2()
@@ -60,6 +112,24 @@ class MacLearningController(Thread):
                 self.handleArpRequest(pkt)
             elif pkt[ARP].op == ARP_OP_REPLY:
                 self.handleArpReply(pkt)
+        elif IP in pkt:
+            if pkt[IP].ttl == 1:
+                self.handleIPv4Ttl(pkt)
+        else:
+            self.handleUnknownPacket(pkt)
+        
+    def getOspfPkt(self):
+        pkt = Ether()/IP()/OSPF()
+        pkt[Ether].dst = "ff:ff:ff:ff:ff:ff"
+        pkt[IP].src = self.router_ip
+        pkt[IP].dst = 0xe0000005
+        pkt[IP].proto = TYPE_OSPF
+
+        pkt[OSPF].router_id = self.router_id
+        pkt[OSPF].type = 0
+        pkt[OSPF].area_id = self.area_id
+
+        return pkt
 
     def send(self, *args, **override_kwargs):
         pkt = args[0]
@@ -74,8 +144,42 @@ class MacLearningController(Thread):
 
     def start(self, *args, **kwargs):
         super(MacLearningController, self).start(*args, **kwargs)
+        thing = Hello_
         time.sleep(self.start_wait)
 
     def join(self, *args, **kwargs):
         self.stop_event.set()
         super(MacLearningController, self).join(*args, **kwargs)
+
+class Hello_controller(Thread):
+    def __init__(self, send, LSU_wait, hello_wait, ip, get_ospf_packet, start_wait=0.3):
+        super(Hello_controller, self).__init__()
+        self.start_wait = start_wait # time to wait for the controller to be listenning
+        self.send = send
+        self.hello_wait = self.hello_wait
+        self.ip = ip
+        self.get_ospf_packet = get_ospf_packet
+        self.stop_event = Event()
+
+    def start(self, *args, **kwargs):
+        super(Hello_controller, self).start(*args, **kwargs)
+        time.sleep(self.start_wait)
+
+    def send_hello(self):
+        pkt = self.get_ospf_packet()/OSPF_hello()
+        pkt[IP].len = 13
+        pkt[OSPF].type = 1
+        pkt[OSPF].len = 32
+        pkt[OSPF_hello].network_mask = 0xffffff00
+        pkt[OSPF_hello].helloint = self.hello_wait
+
+        self.send(pkt)
+
+
+    def run(self):
+        while True:
+            self.send_hello()
+            time.sleep(self.hello_wait)
+            
+
+        # sniff(iface=self.iface, prn=self.handleOSPFPkt, stop_event=self.stop_event)
