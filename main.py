@@ -36,8 +36,8 @@ sw2.insertTableEntry(table_name='MyIngress.fwd_l2',
         action_params={'mgid': bcast_mgid})
 
 # Start the MAC learning controller
-cpu1 = MacLearningController(sw1)
-cpu2 = MacLearningController(sw2)
+cpu1 = MacLearningController(sw1, "10.0.0.0","192.168.0.0")
+cpu2 = MacLearningController(sw2, "10.0.1.0","192.168.0.0")
 cpu1.start()
 cpu2.start()
 

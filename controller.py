@@ -119,10 +119,11 @@ class MacLearningController(Thread):
             self.handleUnknownPacket(pkt)
         
     def getOspfPkt(self):
-        pkt = Ether()/IP()/OSPF()
+        pkt = Ether()/CPUMetadata()/IP()/OSPF()
         pkt[Ether].dst = "ff:ff:ff:ff:ff:ff"
-        pkt[IP].src = self.router_ip
-        pkt[IP].dst = 0xe0000005
+        pkt[CPUMetadata].srcPort = 1
+        pkt[IP].src = self.router_id
+        pkt[IP].dst = "224.0.0.5"
         pkt[IP].proto = TYPE_OSPF
 
         pkt[OSPF].router_id = self.router_id
@@ -144,7 +145,8 @@ class MacLearningController(Thread):
 
     def start(self, *args, **kwargs):
         super(MacLearningController, self).start(*args, **kwargs)
-        thing = Hello_
+        hello_cont = Hello_controller(self.send, HELLO_INT, self.router_id, self.getOspfPkt)
+        hello_cont.start()
         time.sleep(self.start_wait)
 
     def join(self, *args, **kwargs):
@@ -152,11 +154,11 @@ class MacLearningController(Thread):
         super(MacLearningController, self).join(*args, **kwargs)
 
 class Hello_controller(Thread):
-    def __init__(self, send, LSU_wait, hello_wait, ip, get_ospf_packet, start_wait=0.3):
+    def __init__(self, send, hello_wait, ip, get_ospf_packet, start_wait=0.3):
         super(Hello_controller, self).__init__()
-        self.start_wait = start_wait # time to wait for the controller to be listenning
+        self.start_wait = start_wait
         self.send = send
-        self.hello_wait = self.hello_wait
+        self.hello_wait = hello_wait
         self.ip = ip
         self.get_ospf_packet = get_ospf_packet
         self.stop_event = Event()
@@ -167,19 +169,21 @@ class Hello_controller(Thread):
 
     def send_hello(self):
         pkt = self.get_ospf_packet()/OSPF_hello()
-        pkt[IP].len = 13
         pkt[OSPF].type = 1
         pkt[OSPF].len = 32
-        pkt[OSPF_hello].network_mask = 0xffffff00
-        pkt[OSPF_hello].helloint = self.hello_wait
+        pkt[OSPF_hello].net_mask = "255.255.255.0"
+        pkt[OSPF_hello].hello_int = self.hello_wait
+        pkt.show()
+        pkt.show2()
 
         self.send(pkt)
 
 
     def run(self):
-        while True:
-            self.send_hello()
-            time.sleep(self.hello_wait)
+        # while True:
+        self.send_hello()
+        # time.sleep(self.hello_wait)
+        # self.send_hello()
             
 
         # sniff(iface=self.iface, prn=self.handleOSPFPkt, stop_event=self.stop_event)
