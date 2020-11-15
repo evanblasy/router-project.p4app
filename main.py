@@ -56,8 +56,6 @@ cpu2.start()
 h2, h3 = net.get('h2'), net.get('h3')
 
 time.sleep(TIME_TO_RUN)
-cpu1.stop_controller()
-cpu2.stop_controller()
 cpu1.join()
 cpu2.join()
 

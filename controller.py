@@ -4,6 +4,7 @@ from scapy.all import Packet, Ether, IP, ARP, ICMP
 from async_sniff import sniff
 from cpu_metadata import CPUMetadata
 from ospf import OSPF, OSPF_hello, OSPF_LSU, LSU, TYPE_OSPF
+from router_database import RouterDatabase
 import time
 
 ARP_OP_REQ   = 0x0001
@@ -53,6 +54,8 @@ class MacLearningController(Thread):
         self.stop_event = Event()
         self.hello_cont = Hello_controller(self.send, HELLO_INT, self.router_id, self.getOspfPkt)
         self.lsu_cont = LSU_controller(LSU_INT,self.send,self.getOspfPkt)
+        self.lsu_sequences = dict()
+        self.router_database = RouterDatabase(router_id)
 
         INTERFACES[router_id] = dict()
 
@@ -105,15 +108,25 @@ class MacLearningController(Thread):
 
     def handleOspfHello(self, pkt):
         self.addMacAddr(pkt[Ether].src,pkt[IP].src,pkt[CPUMetadata].srcPort)
-        print("PACKET SOURCE: " + str(pkt[IP].src))
+        # print("PACKET SOURCE: " + str(pkt[IP].src))
         interface_ip = self.router_id[:-1] + str(pkt[CPUMetadata].srcPort)
         if interface_ip not in (INTERFACES[self.router_id]):
             self.addInterface(interface_ip, pkt[OSPF_hello].net_mask, pkt[OSPF_hello].hello_int)
             (INTERFACES[self.router_id][interface_ip]).add_hello_pkt_time(pkt[OSPF].router_id, pkt[IP].src)
-        print("CURRENT ROUTER: " + str(self.router_id))
-        print(INTERFACES[self.router_id])
-        for key,value in INTERFACES[self.router_id].items():
-            print(value)
+        # print("CURRENT ROUTER: " + str(self.router_id))
+        # print(INTERFACES[self.router_id])
+        # for key,value in INTERFACES[self.router_id].items():
+        #     print(value)
+        
+    def handleOspfLSU(self, pkt):
+        if pkt[OSPF].router_id == self.router_id: return
+        # check seq or add if first
+        if pkt[IP].src not in self.lsu_sequences: self.lsu_sequences[pkt[IP].src] = pkt[OSPF_LSU].seq
+        elif self.lsu_sequences[pkt[IP].src] < pkt[OSPF_LSU].seq: self.lsu_sequences[pkt[IP].src] = pkt[OSPF_LSU].seq
+        else: return
+
+
+        pkt.show2()
 
     def handleUnknownPacket(self, pkt):
         print("UNKNOWN PACKET TYPE")
@@ -136,7 +149,7 @@ class MacLearningController(Thread):
             elif OSPF_hello in pkt:
                 self.handleOspfHello(pkt)
             elif OSPF_LSU in pkt:
-                print("HELLO I'M WORKING")
+                self.handleOspfLSU(pkt)
         else:
             self.handleUnknownPacket(pkt)
         
@@ -171,15 +184,13 @@ class MacLearningController(Thread):
         self.hello_cont.start()
         self.lsu_cont.start()
         time.sleep(self.start_wait)
-    
-    def stop_controller(self):
-        self.hello_cont.stop_event.set()
-        self.lsu_cont.stop_event.set()
 
     def join(self, *args, **kwargs):
         self.stop_event.set()
-        self.hello_cont.join()
-        self.lsu_cont.join()
+        self.hello_cont.stop_event.set()
+        self.lsu_cont.stop_event.set()
+        # self.hello_cont.join()
+        # self.lsu_cont.join()
         super(MacLearningController, self).join(*args, **kwargs)
 
 class Hello_controller(Thread):
@@ -205,9 +216,9 @@ class Hello_controller(Thread):
 
         self.send(pkt)
 
-    def join(self, *args, **kwargs):
-        self.stop_event.set()
-        super(Hello_controller, self).join(*args, **kwargs)
+    # def join(self, *args, **kwargs):
+    #     self.stop_event.set()
+    #     super(Hello_controller, self).join(*args, **kwargs)
 
 
     def run(self):
@@ -253,11 +264,12 @@ class LSU_controller(Thread):
             lsu_pkt[IP].dst = ip
             self.send(lsu_pkt)
             # lsu_pkt.show2()
+        self.lsu_seq += 1
 
     
-    def join(self, *args, **kwargs):
-        self.stop_event.set()
-        super(LSU_controller, self).join(*args, **kwargs)
+    # def join(self, *args, **kwargs):
+    #     self.stop_event.set()
+    #     super(LSU_controller, self).join(*args, **kwargs)
     
     def run(self):
         while not self.stop_event.isSet():
