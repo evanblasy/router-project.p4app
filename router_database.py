@@ -11,8 +11,13 @@ class RouterDatabase:
 			self.add_router(ip_one)
 		if ip_two not in self.routers:
 			self.add_router(ip_two)
-		self.topology.addEdge(self.routers.index(ip_one),
+		return self.topology.addEdge(self.routers.index(ip_one),
 												self.routers.index(ip_two))
+
+	def remove_all_links(self, ip):
+		for i in range(0,len(self.routers)):
+			if self.routers[i] == ip: continue
+			self.remove_link(ip, self.routers[i])
 
 	def add_router(self, ip):
 		self.topology.addVertex()
@@ -58,29 +63,32 @@ class Graph:
 			for j in range(0, self.__n):
 				self.__g[i][j] = 0
 
-	def displayAdjacencyMatrix(self): 
-		print("\n\n Adjacency Matrix:", end ="") 
+	# def displayAdjacencyMatrix(self): 
+	# 	print("\n\n Adjacency Matrix:", end ="") 
 
-		# displaying the 2D array 
-		for i in range(0, self.__n): 
-			print() 
-			for j in range(0, self.__n): 
-				print("", self.__g[i][j], end ="") 
+	# 	# displaying the 2D array 
+	# 	for i in range(0, self.__n): 
+	# 		print() 
+	# 		for j in range(0, self.__n): 
+	# 			print("", self.__g[i][j], end ="") 
 		
 	def addEdge(self, x, y): 
  
 		# checks if the vertex exists in the graph  
 		if(x>= self.__n) or (y >= self.__n): 
 			print("Vertex does not exists !") 
+			return -1
 					
 		# checks if the vertex is connecting to itself 
 		if(x == y): 
 			print("Same Vertex !") 
+			return -1 
 		else: 
-							 
+			if self.__g[y][x] == 1 and self.__g[x][y] == 1: return 0
 			# connecting the vertices 
 			self.__g[y][x]= 1
 			self.__g[x][y]= 1
+			return 1
 
 	def removeEdge(self, x, y):
 		if(x>= self.__n) or (y >= self.__n): 
@@ -141,25 +149,25 @@ class Graph:
 				min_index = i 
 		return min_index 
 
-	def printPath(self, parent, j): 
+	# def printPath(self, parent, j): 
 
-		#Base Case : If j is source 
-		if parent[j] == -1 :  
-			print(j) 
-			return
-		self.printPath(parent , parent[j]) 
-		print(j, end="")
+	# 	#Base Case : If j is source 
+	# 	if parent[j] == -1 :  
+	# 		print(j) 
+	# 		return
+	# 	self.printPath(parent , parent[j]) 
+	# 	print(j, end="")
 
 
-	# A utility function to print 
-	# the constructed distance 
-	# array 
-	def printSolution(self, dist, parent): 
-		src = 0
-		print("Vertex \t\tDistance from Source\tPath") 
-		for i in range(1, len(dist)): 
-			print("\n%d --> %d \t\t%d \t\t\t\t\t" % (src, i, dist[i])), 
-		self.printPath(parent,i) 
+	# # A utility function to print 
+	# # the constructed distance 
+	# # array 
+	# def printSolution(self, dist, parent): 
+	# 	src = 0
+	# 	print("Vertex \t\tDistance from Source\tPath") 
+	# 	for i in range(1, len(dist)): 
+	# 		print("\n%d --> %d \t\t%d \t\t\t\t\t" % (src, i, dist[i])), 
+	# 	self.printPath(parent,i) 
 
 	def dijkstra(self, src): 
 

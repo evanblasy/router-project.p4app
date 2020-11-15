@@ -9,8 +9,8 @@ import time
 
 ARP_OP_REQ   = 0x0001
 ARP_OP_REPLY = 0x0002
-HELLO_INT = 15
-LSU_INT = 15
+HELLO_INT = 2
+LSU_INT = 5
 TYPE_IPV4 = 0x0800
 
 INTERFACES = dict()
@@ -53,9 +53,11 @@ class MacLearningController(Thread):
         self.mac_for_ip = {}
         self.stop_event = Event()
         self.hello_cont = Hello_controller(self.send, HELLO_INT, self.router_id, self.getOspfPkt)
-        self.lsu_cont = LSU_controller(LSU_INT,self.send,self.getOspfPkt)
+        self.lsu_cont = LSU_controller(LSU_INT,self.send,self.getOspfPkt,self.getNeighborsFromInterface)
         self.lsu_sequences = dict()
         self.router_database = RouterDatabase(router_id)
+        self.prev_lsu = dict()
+        self.database_adds = set()
 
         INTERFACES[router_id] = dict()
 
@@ -77,6 +79,14 @@ class MacLearningController(Thread):
                     action_name='MyIngress.ipv4_forward',
                     action_params={'dstAddr': mac, 'port': port})
             self.mac_for_ip[ip] = mac
+
+    def getNeighborsFromLsu(self, pkt):
+        list_of_ads = pkt[OSPF_LSU].lsu_ads
+        list_of_routers = []
+        for i in list_of_ads:
+            list_of_routers.append(i.router_id)
+        list_of_routers.sort()
+        return list_of_routers
 
     def addInterface(self,int_ip, mask, helloint):
         INTERFACES[self.router_id][int_ip] = PWOSPFInterface(int_ip,mask,helloint)
@@ -117,16 +127,71 @@ class MacLearningController(Thread):
         # print(INTERFACES[self.router_id])
         # for key,value in INTERFACES[self.router_id].items():
         #     print(value)
+
+        own_interface_list = list(self.getNeighborsFromInterface())
+        self.handleNeighborList(self.router_id, own_interface_list)
+
+    def addRulesFromDatabase(self,ip):
+        self.router_database.remove_all_links(ip)
+        for i in self.prev_lsu[ip]:
+            self.router_database.add_link(ip, i)
+
+        first_jumps = self.router_database.compute_first_jumps()
+
+        for dst, jump in first_jumps.items():
+            if dst not in self.database_adds:
+                mac = self.mac_for_ip[jump[1]]
+                port = self.port_for_mac[mac]
+                self.sw.insertTableEntry(table_name='MyIngress.ipv4_lpm',
+                    match_fields={'hdr.ipv4.dstAddr': [dst,24]},
+                    action_name='MyIngress.ipv4_forward',
+                    action_params={'dstAddr': mac, 'port': port})
+                self.database_adds.add(dst)
+
+    def handleNeighborList(self, ip, list_of_neighbors):
+        different = False
+        if (ip in self.prev_lsu and self.prev_lsu[ip] != list_of_neighbors):
+            self.prev_lsu[ip] = list_of_neighbors
+            different = True
+        elif ip not in self.prev_lsu:
+            self.prev_lsu[ip] = list_of_neighbors
+            different = True
+
+        if different:
+            self.addRulesFromDatabase(ip)
+
         
     def handleOspfLSU(self, pkt):
-        if pkt[OSPF].router_id == self.router_id: return
+        if pkt[OSPF].router_id == self.router_id:
+            print("rejected because same id") 
+            return
         # check seq or add if first
         if pkt[IP].src not in self.lsu_sequences: self.lsu_sequences[pkt[IP].src] = pkt[OSPF_LSU].seq
         elif self.lsu_sequences[pkt[IP].src] < pkt[OSPF_LSU].seq: self.lsu_sequences[pkt[IP].src] = pkt[OSPF_LSU].seq
-        else: return
+        else: 
+            print("rejected because of seq")
+            return
 
+        list_of_neighbors = self.getNeighborsFromLsu(pkt)
 
-        pkt.show2()
+        self.handleNeighborList(pkt[IP].src, list_of_neighbors)
+
+        for ip in list_of_neighbors:
+            pkt[IP].dst = ip
+            # pkt.show2()
+            self.send(pkt)
+
+        # different = False
+        # if (pkt[IP].src in self.prev_lsu and self.prev_lsu[pkt[IP].src] != list_of_neighbors):
+        #     self.prev_lsu[pkt[IP].src] = list_of_neighbors
+        #     different = True
+        # elif pkt[IP].src not in self.prev_lsu:
+        #     self.prev_lsu[pkt[IP].src] = list_of_neighbors
+        #     different = True
+
+        # if different:
+        #     self.addRulesFromDatabase(pkt[IP].src)
+
 
     def handleUnknownPacket(self, pkt):
         print("UNKNOWN PACKET TYPE")
@@ -155,7 +220,7 @@ class MacLearningController(Thread):
         
     def getOspfPkt(self):
         pkt = Ether()/CPUMetadata()/IP()/OSPF()
-        pkt[Ether].dst = "ff:ff:ff:ff:ff:ff"
+        pkt[Ether].dst = "00:00:00:00:00:00"
         pkt[CPUMetadata].srcPort = 1
         pkt[CPUMetadata].origEtherType = TYPE_IPV4
         pkt[IP].src = self.router_id
@@ -175,6 +240,14 @@ class MacLearningController(Thread):
         kwargs = dict(iface=self.iface, verbose=False)
         kwargs.update(override_kwargs)
         sendp(*args, **kwargs)
+
+    def getNeighborsFromInterface(self):
+        neighbors_ip = set()
+        for key, value in INTERFACES[self.router_id].items():
+            for key2, value2 in value.neighbors.items():
+                neighbors_ip.add(value2[0])
+
+        return neighbors_ip
 
     def run(self):
         sniff(iface=self.iface, prn=self.handlePkt, stop_event=self.stop_event)
@@ -216,28 +289,21 @@ class Hello_controller(Thread):
 
         self.send(pkt)
 
-    # def join(self, *args, **kwargs):
-    #     self.stop_event.set()
-    #     super(Hello_controller, self).join(*args, **kwargs)
-
 
     def run(self):
         while not self.stop_event.isSet():
             time.sleep(self.hello_wait)
             self.send_hello()
-        # time.sleep(1)
-        # self.send_hello()
-        # time.sleep(self.hello_wait)
-        # self.send_hello()
 
 class LSU_controller(Thread):
-    def __init__(self, lsu_int, send, get_ospf_packet, start_wait=0.3):
+    def __init__(self, lsu_int, send, get_ospf_packet, get_neighbors, start_wait=0.3):
         super(LSU_controller, self).__init__()
         self.start_wait = start_wait
         self.lsu_int = lsu_int
         self.lsu_seq = 0
         self.send = send
         self.get_ospf_packet = get_ospf_packet
+        self.get_neighbors = get_neighbors
         self.stop_event = Event()
 
     def start(self, *args, **kwargs):
@@ -249,17 +315,15 @@ class LSU_controller(Thread):
         lsu_list = []
         pkt_bare[OSPF].type = 4
         pkt_bare[OSPF].len = 32
-        neighbors_ip = set()
+        neighbors_ip = self.get_neighbors()
         for key, value in INTERFACES[pkt_bare[OSPF].router_id].items():
             for key2, value2 in value.neighbors.items():
                 lsu_list.append(LSU(subnet=pkt_bare[OSPF].router_id,mask=value.mask,router_id=value2[0]))
-                neighbors_ip.add(value2[0])
+                # neighbors_ip.add(value2[0])
         
         pkt_bare[OSPF].len = 32 + len(lsu_list)*12
         lsu_pkt = pkt_bare/OSPF_LSU(seq=self.lsu_seq, adverts=len(lsu_list), lsu_ads=lsu_list)
         # (pkt_bare/OSPF_LSU(seq=self.lsu_seq, adverts=0, lsu_ads=[])).show2()
-        # lsu_pkt.show2()
-        # lsu_pkt.show()
         for ip in neighbors_ip:
             lsu_pkt[IP].dst = ip
             self.send(lsu_pkt)
@@ -267,13 +331,7 @@ class LSU_controller(Thread):
         self.lsu_seq += 1
 
     
-    # def join(self, *args, **kwargs):
-    #     self.stop_event.set()
-    #     super(LSU_controller, self).join(*args, **kwargs)
-    
     def run(self):
         while not self.stop_event.isSet():
             time.sleep(self.lsu_int)
             self.send_lsu()
-        # time.sleep(self.hello_wait)
-        # self.send_hello()
