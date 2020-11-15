@@ -1,6 +1,7 @@
 from p4app import P4Mininet
 from my_topo import SingleSwitchTopo, DoubleSwitchTopo
 from controller import MacLearningController
+import time
 
 def hostIP(i):
     return "10.0.0.%d" % (i)
@@ -10,6 +11,7 @@ def hostMac(i):
 
 # Add three hosts. Port 1 (h1) is reserved for the CPU.
 N = 3
+TIME_TO_RUN = 30
 
 # topo = SingleSwitchTopo(N)
 topo = DoubleSwitchTopo(N)
@@ -52,6 +54,13 @@ cpu1.start()
 cpu2.start()
 
 h2, h3 = net.get('h2'), net.get('h3')
+
+time.sleep(TIME_TO_RUN)
+cpu1.stop_controller()
+cpu2.stop_controller()
+cpu1.join()
+cpu2.join()
+
 
 # print h2.cmd('arping -c1 10.0.0.3')
 # print h2.cmd('arping -c1 10.0.0.3')

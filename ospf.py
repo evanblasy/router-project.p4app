@@ -28,7 +28,10 @@ class OSPF_hello(Packet):
 class LSU(Packet):
     fields_desc = [ IPField("subnet", None),
                     IPField("mask", None),
-                    IntField("router_id", None)]
+                    IPField("router_id", None)]
+
+    def extract_padding(self, p):
+        return "", p
 
 class OSPF_LSU(Packet):
     name = "OSPF_LSU"
@@ -37,8 +40,11 @@ class OSPF_LSU(Packet):
                     FieldLenField("adverts", 0, count_of='lsu_ads'),
                     PacketListField('lsu_ads', [], LSU, count_from = lambda a : (a.adverts))
                     ]
+    
+    def extract_padding(self, p):
+        return "", p
 
 
 bind_layers(IP, OSPF, proto=TYPE_OSPF)
 bind_layers(OSPF, OSPF_hello, type=TYPE_OSPF_HELLO)
-bind_layers(OSPF, OSPF_hello, type=TYPE_OSPF_LSU)
+bind_layers(OSPF, OSPF_LSU, type=TYPE_OSPF_LSU)

@@ -132,6 +132,7 @@ parser MyParser(packet_in packet,
         packet.extract(hdr.cpu_metadata);
         transition select(hdr.cpu_metadata.origEtherType) {
             TYPE_ARP: parse_arp;
+            TYPE_IPV4: parse_ipv4;
             default: accept;
         }
     }
