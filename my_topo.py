@@ -46,3 +46,4 @@ class DoubleSwitchTopo(Topo):
         self.addLink(cpu3, switch3, port2=1)
         self.addLink(switch1,switch3, port1=2, port2=2)
         self.addLink(switch3,switch2, port1=3, port2=3)
+        # self.addLink(switch1,switch2,port1=2,port2=2)

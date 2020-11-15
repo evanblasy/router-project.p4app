@@ -10,10 +10,14 @@ import time
 ARP_OP_REQ   = 0x0001
 ARP_OP_REPLY = 0x0002
 HELLO_INT = 2
-LSU_INT = 5
+LSU_INT = 4
 TYPE_IPV4 = 0x0800
 
 INTERFACES = dict()
+
+def ip2hex(ip):
+    ip1 =  ''.join([hex(int(x)+256)[3:] for x in ip.split('.')])
+    return int(ip1,16)
 
 class PWOSPFInterface():
     def __init__(self, int_ip, mask, helloint):
@@ -47,6 +51,7 @@ class MacLearningController(Thread):
         self.router_id = router_id
         self.area_id = area_id
         self.sw = sw
+        self.mask = ip2hex('255.255.255.0')
         self.start_wait = start_wait # time to wait for the controller to be listenning
         self.iface = sw.intfs[1].name
         self.port_for_mac = {}
@@ -63,6 +68,7 @@ class MacLearningController(Thread):
 
     def addMacAddr(self, mac, ip, port):
         # Don't re-add the mac-port mapping if we already have it:
+        # print(mac,ip,port)
         if mac not in self.port_for_mac:
             self.sw.insertTableEntry(table_name='MyIngress.fwd_l2',
                     match_fields={'hdr.ethernet.dstAddr': [mac]},
@@ -71,7 +77,7 @@ class MacLearningController(Thread):
             self.port_for_mac[mac] = port
         if ip not in self.mac_for_ip:
             self.sw.insertTableEntry(table_name='MyIngress.arp_exact',
-                    match_fields={'hdr.arp.dstIP': [ip]},
+                    match_fields={'hdr.arp.dstIP': [ip, 32]},
                     action_name='MyIngress.response_to_arp',
                     action_params={'dstAddr': mac})
             self.sw.insertTableEntry(table_name='MyIngress.ipv4_lpm',
@@ -92,6 +98,8 @@ class MacLearningController(Thread):
         INTERFACES[self.router_id][int_ip] = PWOSPFInterface(int_ip,mask,helloint)
 
     def handleArpReply(self, pkt):
+        # print("hi")
+        # pkt.show2()
         self.addMacAddr(pkt[ARP].hwsrc, pkt[ARP].psrc, pkt[CPUMetadata].srcPort)
         self.send(pkt)
 
@@ -117,7 +125,9 @@ class MacLearningController(Thread):
         self.send(pkt)
 
     def handleOspfHello(self, pkt):
-        self.addMacAddr(pkt[Ether].src,pkt[IP].src,pkt[CPUMetadata].srcPort)
+        self.mac_for_ip[pkt[IP].src] = pkt[Ether].src
+        self.port_for_mac[pkt[Ether].src] = pkt[CPUMetadata].srcPort
+        # self.addMacAddr(pkt[Ether].src,pkt[IP].src,pkt[CPUMetadata].srcPort)
         # print("PACKET SOURCE: " + str(pkt[IP].src))
         interface_ip = self.router_id[:-1] + str(pkt[CPUMetadata].srcPort)
         if interface_ip not in (INTERFACES[self.router_id]):
@@ -142,6 +152,10 @@ class MacLearningController(Thread):
             if dst not in self.database_adds:
                 mac = self.mac_for_ip[jump[1]]
                 port = self.port_for_mac[mac]
+                self.sw.insertTableEntry(table_name='MyIngress.arp_exact',
+                    match_fields={'hdr.arp.dstIP': [dst, 24]},
+                    action_name='MyIngress.response_to_arp',
+                    action_params={'dstAddr': mac})
                 self.sw.insertTableEntry(table_name='MyIngress.ipv4_lpm',
                     match_fields={'hdr.ipv4.dstAddr': [dst,24]},
                     action_name='MyIngress.ipv4_forward',
@@ -205,6 +219,15 @@ class MacLearningController(Thread):
 
         if ARP in pkt:
             if pkt[ARP].op == ARP_OP_REQ:
+                if (ip2hex(pkt[ARP].psrc) & self.mask) != ip2hex(self.router_id):
+                    # print(ip2hex(pkt[ARP].psrc))
+                    # print(self.mask)
+                    # print(pkt[ARP].psrc)
+                    # print(ip2hex(self.router_id))
+                    # print(self.router_id)
+                    # print("wrong subnet")
+                    return 
+
                 self.handleArpRequest(pkt)
             elif pkt[ARP].op == ARP_OP_REPLY:
                 self.handleArpReply(pkt)

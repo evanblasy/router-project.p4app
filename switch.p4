@@ -210,7 +210,7 @@ control MyIngress(inout headers hdr,
     }
 
     action response_to_arp(macAddr_t dstAddr) {
-        if (hdr.arp.opcode != ARP_OP_REPLY) {
+        if (hdr.arp.opcode == ARP_OP_REQ) {
             hdr.ethernet.dstAddr = hdr.ethernet.srcAddr;
             hdr.ethernet.srcAddr = dstAddr;
 
@@ -250,7 +250,7 @@ control MyIngress(inout headers hdr,
 
     table arp_exact {
         key = {
-            hdr.arp.dstIP: exact;
+            hdr.arp.dstIP: lpm;
         }
         actions = {
             response_to_arp;
@@ -294,9 +294,15 @@ control MyIngress(inout headers hdr,
             cpu_meta_decap();
 
         if (hdr.arp.isValid() && standard_metadata.ingress_port != CPU_PORT) {
+            // bool match;
+            bit <16> op_code = hdr.arp.opcode;
             arp_exact.apply();
             tally(1);
-            send_to_cpu();
+            if (op_code == hdr.arp.opcode) {
+                send_to_cpu();
+            } else {
+                fwd_l2.apply();
+            }
         } else if (hdr.ospf.isValid() && standard_metadata.ingress_port != CPU_PORT) {
             send_to_cpu();
         } else if (hdr.ipv4.isValid()) {
@@ -306,13 +312,13 @@ control MyIngress(inout headers hdr,
                 ipv4_lpm.apply();
             }
             tally(0);
-        } else if (hdr.ethernet.isValid()) {
+        }else if (hdr.ethernet.isValid()) {
             fwd_l2.apply();
         }
 
-       if (standard_metadata.egress_spec == CPU_PORT) {
-           tally(2);
-       } 
+        if (standard_metadata.egress_spec == CPU_PORT) {
+            tally(2);
+        } 
     }
 }
 

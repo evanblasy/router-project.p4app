@@ -10,7 +10,7 @@ def hostMac(i):
 	return '00:00:00:00:00:%02x' % (i)
 
 # Add three hosts. Port 1 (h1) is reserved for the CPU.
-N = 3
+N = 5
 TIME_TO_RUN = 10
 
 # topo = SingleSwitchTopo(N)
@@ -69,10 +69,16 @@ cpu3.start()
 h2, h3, h4, h5 = net.get('h2'), net.get('h3'), net.get('h4'), net.get('h5')
 
 # time.sleep(1)
-# print h2.cmd('arping -c1 10.0.0.3')
-# print h3.cmd('arping -c1 10.0.1.2')
+print h2.cmd('arping -c1 10.0.0.3')
+print h3.cmd('arping -c1 10.0.1.2')
 
-time.sleep(TIME_TO_RUN)
+time.sleep(5)
+# print h3.cmd('arping -c1 10.0.0.3')
+print h3.cmd('ping -c1 10.0.0.3')
+
+
+
+
 cpu1.join()
 cpu2.join()
 cpu3.join()
