@@ -116,7 +116,7 @@ def inlineTest():
 
 def finalTest():
     MAX_PORT = 10
-    total_sim_time = 30
+    total_sim_time = 20
 
     topo = FiveSwitchTopo()
     net = P4Mininet(program='switch.p4', topo=topo, auto_arp=False)
@@ -154,7 +154,10 @@ def finalTest():
     print (hosts[0]).cmd("ping -c1 10.0.2.5")
     print (hosts[0]).cmd("ping -c1 10.0.3.7")
     print (hosts[0]).cmd("ping -c1 10.0.4.9")
+    cpu_temp = cpus.pop(0)
 
+    cpu_temp.join()
+    time.sleep(30)
 
     print (hosts[4]).cmd("ping -c1 10.0.0.1")
 

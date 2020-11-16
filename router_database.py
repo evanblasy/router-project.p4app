@@ -36,7 +36,8 @@ class RouterDatabase:
 
 	def remove_router(self, ip):
 		index = self.routers.index(ip)
-		self.routers.pop(ip)
+		self.remove_all_links(ip)
+		self.routers.pop(index)
 		self.topology.removeVertex(index)
 
 	def remove_link(self, ip_one, ip_two):

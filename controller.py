@@ -49,6 +49,8 @@ class PWOSPFInterface():
         for i in remove:
             del self.neighbors[i]
 
+        return 1 if remove else 0
+
 class MacLearningController(Thread):
     def __init__(self, sw, router_id, area_id, mac, start_wait=0.3):
         super(MacLearningController, self).__init__()
@@ -62,8 +64,8 @@ class MacLearningController(Thread):
         self.port_for_mac = {}
         self.mac_for_ip = {}
         self.stop_event = Event()
-        self.hello_cont = Hello_controller(self.send, HELLO_INT, self.router_id, self.getOspfPkt)
         self.lsu_cont = LSU_controller(LSU_INT,self.send,self.getOspfPkt,self.getNeighborsFromInterface)
+        self.hello_cont = Hello_controller(self.send, HELLO_INT, self.router_id, self.getOspfPkt, self.lsu_cont.send_lsu)
         self.lsu_sequences = dict()
         self.router_database = RouterDatabase(router_id)
         self.prev_lsu = dict()
@@ -144,6 +146,13 @@ class MacLearningController(Thread):
         LOCKS[self.router_id].acquire()
         (INTERFACES[self.router_id][interface_ip]).add_hello_pkt_time(pkt[OSPF].router_id, pkt[IP].src)
         LOCKS[self.router_id].release()
+
+        # LOCKS[self.router_id].acquire()
+        # changed = False
+        # for interface in INTERFACES[self.router_id]:
+        #     if interface.check_helloint():
+        #         changed = True
+        # LOCKS[self.router_id].release()
         # print("CURRENT ROUTER: " + str(self.router_id))
         # print(INTERFACES[self.router_id])
         # for key,value in INTERFACES[self.router_id].items():
@@ -183,10 +192,18 @@ class MacLearningController(Thread):
                 self.database_adds.add(dst)
         # if self.router_id == '10.0.0.0': self.router_database.dump()
 
+    def removeRulesFromDatabase(self,removed_entries):
+        if removed_entries:
+            for i in removed_entries:
+                self.router_database.remove_router(i)
+            print("REMOVING ROUTER - " + i)
+
     def handleNeighborList(self, ip, list_of_neighbors):
         # LOCKS[self.router_id].acquire()
         different = False
+        removed_entries = []
         if (ip in self.prev_lsu and self.prev_lsu[ip] != list_of_neighbors):
+            removed_entries = list(set(self.prev_lsu[ip])- set(list_of_neighbors))
             self.prev_lsu[ip] = list_of_neighbors
             different = True
         elif ip not in self.prev_lsu:
@@ -197,6 +214,7 @@ class MacLearningController(Thread):
             # DEBUG_LOCK.acquire()
             # print(self.router_id, self.prev_lsu)
             # DEBUG_LOCK.release()
+            self.removeRulesFromDatabase(removed_entries)
             self.addRulesFromDatabase(ip)
         # LOCKS[self.router_id].release()
 
@@ -320,7 +338,7 @@ class MacLearningController(Thread):
         super(MacLearningController, self).join(*args, **kwargs)
 
 class Hello_controller(Thread):
-    def __init__(self, send, hello_wait, ip, get_ospf_packet, start_wait=0.3):
+    def __init__(self, send, hello_wait, ip, get_ospf_packet, trigger_lsu, start_wait=0.3):
         super(Hello_controller, self).__init__()
         self.start_wait = start_wait
         self.send = send
@@ -328,10 +346,25 @@ class Hello_controller(Thread):
         self.ip = ip
         self.get_ospf_packet = get_ospf_packet
         self.stop_event = Event()
+        self.trigger_lsu = trigger_lsu
 
     def start(self, *args, **kwargs):
         super(Hello_controller, self).start(*args, **kwargs)
         time.sleep(self.start_wait)
+
+    def check_interfaces(self, router_id):
+        LOCKS[router_id].acquire()
+        # if router_id == '10.0.1.0':
+        #     for key, interface in INTERFACES[router_id].items():
+        #         print(interface)
+
+        changed = False
+        for key, interface in INTERFACES[router_id].items():
+            if interface.check_helloint():
+                changed = True
+        LOCKS[router_id].release()
+
+        return changed
 
     def send_hello(self):
         pkt = self.get_ospf_packet()/OSPF_hello()
@@ -341,6 +374,10 @@ class Hello_controller(Thread):
         pkt[OSPF_hello].hello_int = self.hello_wait
 
         self.send(pkt)
+
+        if self.check_interfaces(pkt[OSPF].router_id):
+            print("Flooding LSU because of loss of router")
+            self.trigger_lsu
 
 
     def run(self):
