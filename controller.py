@@ -196,7 +196,7 @@ class MacLearningController(Thread):
         if removed_entries:
             for i in removed_entries:
                 self.router_database.remove_router(i)
-            print("REMOVING ROUTER - " + i)
+            print("Router " + self.router_id + ", REMOVING ROUTER - " + i)
 
     def handleNeighborList(self, ip, list_of_neighbors):
         # LOCKS[self.router_id].acquire()

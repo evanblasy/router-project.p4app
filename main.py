@@ -120,7 +120,6 @@ def finalTest():
 
     topo = FiveSwitchTopo()
     net = P4Mininet(program='switch.p4', topo=topo, auto_arp=False)
-    # net = P4Mininet(program='switch.p4', topo=topo, auto_arp=False)
     net.start()
 
     bcast_mgid = 1
