@@ -1,4 +1,7 @@
+from __future__ import print_function
+from threading import Lock
 
+threading_lock = Lock()
 
 class RouterDatabase:
 	def __init__(self, source_ip):
@@ -6,18 +9,26 @@ class RouterDatabase:
 		self.source_ip = source_ip
 		self.routers = [source_ip]
 
+	def dump(self):
+		threading_lock.acquire()
+		print("DUMP")
+		self.topology.displayAdjacencyMatrix()
+		threading_lock.release()
+
 	def add_link(self, ip_one, ip_two):
 		if ip_one not in self.routers:
+			# if self.source_ip == '10.0.0.0': print("HI LO " + ip_one)
 			self.add_router(ip_one)
 		if ip_two not in self.routers:
 			self.add_router(ip_two)
-		return self.topology.addEdge(self.routers.index(ip_one),
+		self.topology.addEdge(self.routers.index(ip_one),
 												self.routers.index(ip_two))
 
 	def remove_all_links(self, ip):
-		for i in range(0,len(self.routers)):
-			if self.routers[i] == ip: continue
-			self.remove_link(ip, self.routers[i])
+		if ip not in self.routers: return
+		for i in self.routers:
+			if i == ip: continue
+			self.remove_link(ip, i)
 
 	def add_router(self, ip):
 		self.topology.addVertex()
@@ -30,7 +41,7 @@ class RouterDatabase:
 
 	def remove_link(self, ip_one, ip_two):
 		if ip_one not in self.routers or ip_two not in self.routers:
-			print("LINK NOT IN GRAPH")
+			# print("LINK NOT IN GRAPH")
 			return
 		self.topology.removeEdge(self.routers.index(ip_one),
 												self.routers.index(ip_two))
@@ -44,33 +55,39 @@ class RouterDatabase:
 			while parents[parents[prev]] != -1:
 				prev = parents[prev]
 			jumps[self.routers[i]] = [self.source_ip, self.routers[prev]]
+		
+
 		return jumps
 
 
 class Graph:
 	# number of vertices
-	__n = 0
+	# __n = 0
 
 	# adjacency matrix
-	__g = [[0 for x in range(10)] for y in range(10)]
+	# __g = [[0 for x in range(10)] for y in range(10)]
 
 	# constructor
 	def __init__(self, x):
 		self.__n = x
-
+		self.__g = [[0 for x in range(10)] for y in range(10)]
 		# initializing each element of the adjacency matrix to zero
 		for i in range(0, self.__n):
 			for j in range(0, self.__n):
 				self.__g[i][j] = 0
 
-	# def displayAdjacencyMatrix(self): 
-	# 	print("\n\n Adjacency Matrix:", end ="") 
+	def getNumVertices(self):
+		return self.__n
 
-	# 	# displaying the 2D array 
-	# 	for i in range(0, self.__n): 
-	# 		print() 
-	# 		for j in range(0, self.__n): 
-	# 			print("", self.__g[i][j], end ="") 
+	def displayAdjacencyMatrix(self): 
+		print("\n\n Adjacency Matrix:", end ="") 
+
+		# displaying the 2D array 
+		for i in range(0, self.__n): 
+			print() 
+			for j in range(0, self.__n): 
+				print("", self.__g[i][j], end ="") 
+		print()
 		
 	def addEdge(self, x, y): 
  
@@ -193,6 +210,8 @@ class Graph:
 			queue.append(i) 
 					
 		# Find shortest path for all vertices 
+		
+		# threading_lock.acquire()
 		while queue: 
 
 			# Pick the minimum dist vertex  
@@ -200,7 +219,9 @@ class Graph:
 			# still in queue 
 			u = self.minDistance(dist,queue)  
 
-			# remove min element      
+			# remove min element  
+			# print(queue, u)    
+			# print(dist)
 			queue.remove(u)
 
 			# Update dist value and parent  
@@ -221,4 +242,5 @@ class Graph:
 		# print the constructed distance array 
 		# print(dist)
 		# self.printSolution(dist, parent)
+		# threading_lock.release()
 		return parent
