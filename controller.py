@@ -237,24 +237,53 @@ class MacLearningController(Thread):
 
         for ip in self.getNeighborsFromInterface():
             pkt[IP].dst = ip
-            # pkt.show2()
             self.send(pkt)
-
-        # different = False
-        # if (pkt[IP].src in self.prev_lsu and self.prev_lsu[pkt[IP].src] != list_of_neighbors):
-        #     self.prev_lsu[pkt[IP].src] = list_of_neighbors
-        #     different = True
-        # elif pkt[IP].src not in self.prev_lsu:
-        #     self.prev_lsu[pkt[IP].src] = list_of_neighbors
-        #     different = True
-
-        # if different:
-        #     self.addRulesFromDatabase(pkt[IP].src)
 
 
     def handleUnknownPacket(self, pkt):
         print("UNKNOWN PACKET TYPE")
         pkt.show2()
+
+    def packetInNetwork(self, ip):
+        return (ip2hex(ip) & self.mask) == ip2hex(self.router_id)
+
+    def getICMPResponse(self, pkt):
+        new_pkt = Ether()/CPUMetadata()/IP()/ICMP()
+
+        new_pkt[Ether].src = self.mac
+        new_pkt[Ether].dst = "00:00:00:00:00:00"
+        new_pkt[CPUMetadata].srcPort = 1
+        new_pkt[CPUMetadata].origEtherType = TYPE_IPV4
+        new_pkt[IP].src = self.router_id
+        new_pkt[IP].dst = pkt[IP].src
+        new_pkt[IP].id = pkt[IP].id
+        new_pkt[IP].proto = 1
+        
+        del new_pkt[IP].chksum
+        del new_pkt[ICMP].chksum
+
+        new_pkt.add_payload(pkt[IP])
+
+        return new_pkt
+
+    def handleBadIP(self, pkt):
+        new_pkt = self.getICMPResponse(pkt)
+
+        if pkt[IP].ttl == 0:
+            print("TTL RESPONSE")
+            new_pkt[ICMP].type = 11
+            new_pkt[ICMP].code = 0
+            # new_pkt.show2()
+        elif self.packetInNetwork(pkt[IP].dst):
+            print("IN NETWORK")
+            new_pkt[ICMP].type = 3
+            new_pkt[ICMP].code = 7
+        else:
+            print("OUT NETWORK")
+            new_pkt[ICMP].type = 3
+            new_pkt[ICMP].code = 6
+
+        self.send(new_pkt)
 
     def handlePkt(self, pkt):
         assert CPUMetadata in pkt, "Should only receive packets from switch with special header"
@@ -264,25 +293,21 @@ class MacLearningController(Thread):
 
         if ARP in pkt:
             if pkt[ARP].op == ARP_OP_REQ:
-                if (ip2hex(pkt[ARP].psrc) & self.mask) != ip2hex(self.router_id):
-                    # print(ip2hex(pkt[ARP].psrc))
-                    # print(self.mask)
-                    # print(pkt[ARP].psrc)
-                    # print(ip2hex(self.router_id))
-                    # print(self.router_id)
-                    # print("wrong subnet")
+                if not self.packetInNetwork(pkt[ARP].psrc): # (ip2hex(pkt[ARP].psrc) & self.mask) != ip2hex(self.router_id):
                     return 
 
                 self.handleArpRequest(pkt)
             elif pkt[ARP].op == ARP_OP_REPLY:
                 self.handleArpReply(pkt)
         elif IP in pkt:
-            if pkt[IP].ttl == 1:
-                self.handleIPv4Ttl(pkt)
-            elif OSPF_hello in pkt:
+            if OSPF_hello in pkt:
                 self.handleOspfHello(pkt)
             elif OSPF_LSU in pkt:
                 self.handleOspfLSU(pkt)
+            else:
+                self.handleBadIP(pkt)
+
+            
         else:
             self.handleUnknownPacket(pkt)
         

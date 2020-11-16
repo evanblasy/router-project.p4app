@@ -149,19 +149,22 @@ def finalTest():
         print (hosts[i*2]).cmd("arping -c1 10.0.%d.%d" % (i,((i+1)*2)))
     print("ARPPED")
     time.sleep(total_sim_time)
-
+    print("PINGS SHOULD SUCCEED")
     print (hosts[0]).cmd("ping -c1 10.0.1.3")
     print (hosts[0]).cmd("ping -c1 10.0.2.5")
     print (hosts[0]).cmd("ping -c1 10.0.3.7")
     print (hosts[0]).cmd("ping -c1 10.0.4.9")
+    print (hosts[4]).cmd("ping -c1 10.0.0.1")
+    print (hosts[0]).cmd("ping -c1 10.0.1.2")
+    print("PINGS SHOULD FAIL")
+    print (hosts[0]).cmd("ping -c1 10.0.1.2")
+    print (hosts[0]).cmd("ping -c1 10.0.5.3")
+    print (hosts[0]).cmd('ping -t 1 -c1 10.0.0.2')
     cpu_temp = cpus.pop(0)
 
     cpu_temp.join()
+    print("TESTING ROUTER FAILURE")
     time.sleep(30)
-
-    print (hosts[4]).cmd("ping -c1 10.0.0.1")
-
-    print (hosts[9]).cmd("ping -c1 10.0.0.2")
 
     print("FINISHED SLEEPING")
     for i in cpus:

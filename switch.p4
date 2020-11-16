@@ -268,10 +268,11 @@ control MyIngress(inout headers hdr,
             ipv4_forward;
             set_mgid;
             drop;
+            send_to_cpu;
             NoAction;
         }
         size = 1024;
-        default_action = NoAction;
+        default_action = send_to_cpu();
     }
 
    table fwd_l2 {
@@ -307,6 +308,7 @@ control MyIngress(inout headers hdr,
             send_to_cpu();
         } else if (hdr.ipv4.isValid()) {
             if(hdr.ipv4.ttl == 1) {
+                hdr.ipv4.ttl = 0;
                 send_to_cpu();
             } else {
                 ipv4_lpm.apply();
