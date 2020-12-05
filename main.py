@@ -154,7 +154,6 @@ def finalTest():
     print (hosts[0]).cmd("ping -c1 10.0.3.7")
     print (hosts[0]).cmd("ping -c1 10.0.4.9")
     print (hosts[4]).cmd("ping -c1 10.0.0.1")
-    print (hosts[0]).cmd("ping -c1 10.0.1.2")
     print("PINGS SHOULD FAIL")
     print (hosts[0]).cmd("ping -c1 10.0.1.2")
     print (hosts[0]).cmd("ping -c1 10.0.5.3")
