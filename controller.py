@@ -308,9 +308,9 @@ class MacLearningController(Thread):
                     # lg.debug('%s cannot parse this PWOSPF packet correctly\n' % self.sw.name)
                     return
                 if OSPF_hello in pkt:
-                    self.handleOspfHello(pwospf_pkt)
+                    self.handleOspfHello(pkt[Ether]/pkt[CPUMetadata]/pkt[IP]/pwospf_pkt)
                 elif OSPF_LSU in pkt:
-                    self.handleOspfLSU(pwospf_pkt)
+                    self.handleOspfLSU(pkt[Ether]/pkt[CPUMetadata]/pkt[IP]/pwospf_pkt)
             else:
                 self.handleBadIP(pkt)
 
