@@ -135,6 +135,7 @@ class MacLearningController(Thread):
         self.send(pkt)
 
     def handleOspfHello(self, pkt):
+        print("Evan got a Hello!")
         self.mac_for_ip[pkt[IP].src] = pkt[Ether].src
         self.port_for_mac[pkt[Ether].src] = pkt[CPUMetadata].srcPort
         # self.addMacAddr(pkt[Ether].src,pkt[IP].src,pkt[CPUMetadata].srcPort)
@@ -287,7 +288,6 @@ class MacLearningController(Thread):
 
     def handlePkt(self, pkt):
         assert CPUMetadata in pkt, "Should only receive packets from switch with special header"
-
         # Ignore packets that the CPU sends:
         if pkt[CPUMetadata].fromCpu == 1: return
 
@@ -307,9 +307,10 @@ class MacLearningController(Thread):
                     print("cannot parse this PWOSPF correctly")
                     # lg.debug('%s cannot parse this PWOSPF packet correctly\n' % self.sw.name)
                     return
-                if OSPF_hello in pkt:
+                if OSPF_hello in pwospf_pkt:
+                    print("Entered OSPF Hello!")
                     self.handleOspfHello(pkt[Ether]/pkt[CPUMetadata]/pkt[IP]/pwospf_pkt)
-                elif OSPF_LSU in pkt:
+                elif OSPF_LSU in pwospf_pkt:
                     self.handleOspfLSU(pkt[Ether]/pkt[CPUMetadata]/pkt[IP]/pwospf_pkt)
             else:
                 self.handleBadIP(pkt)
