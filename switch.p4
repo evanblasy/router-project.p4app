@@ -66,6 +66,7 @@ header arp_t {
 header ospf_t {
     bit<8> version;
     bit<8> type;
+    bit<16> length_;
     ip4Addr_t router_id;
     bit<32> area_id;
     bit<16> chksum;
