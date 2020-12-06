@@ -302,7 +302,7 @@ class MacLearningController(Thread):
         elif IP in pkt:
             if pkt[IP].proto == TYPE_OSPF:
                 try:
-                    pwospf_pkt = PWOSPF(pkt[Raw])
+                    pwospf_pkt = OSPF(pkt[Raw])
                 except Exception:
                     print("cannot parse this PWOSPF correctly")
                     # lg.debug('%s cannot parse this PWOSPF packet correctly\n' % self.sw.name)
