@@ -45,6 +45,6 @@ class OSPF_LSU(Packet):
         return "", p
 
 
-bind_layers(IP, OSPF, proto=TYPE_OSPF)
+# bind_layers(IP, OSPF, proto=TYPE_OSPF)
 bind_layers(OSPF, OSPF_hello, type=TYPE_OSPF_HELLO)
 bind_layers(OSPF, OSPF_LSU, type=TYPE_OSPF_LSU)

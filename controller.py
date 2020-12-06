@@ -1,7 +1,7 @@
 from __future__ import print_function
 from threading import Thread, Event, Lock
 from scapy.all import sendp
-from scapy.all import Packet, Ether, IP, ARP, ICMP
+from scapy.all import Packet, Ether, IP, ARP, ICMP, Raw
 from async_sniff import sniff
 from cpu_metadata import CPUMetadata
 from ospf import OSPF, OSPF_hello, OSPF_LSU, LSU, TYPE_OSPF
@@ -300,10 +300,17 @@ class MacLearningController(Thread):
             elif pkt[ARP].op == ARP_OP_REPLY:
                 self.handleArpReply(pkt)
         elif IP in pkt:
-            if OSPF_hello in pkt:
-                self.handleOspfHello(pkt)
-            elif OSPF_LSU in pkt:
-                self.handleOspfLSU(pkt)
+            if pkt[IP].proto == TYPE_OSPF:
+                try:
+                    pwospf_pkt = PWOSPF(pkt[Raw])
+                except Exception:
+                    print("cannot parse this PWOSPF correctly")
+                    # lg.debug('%s cannot parse this PWOSPF packet correctly\n' % self.sw.name)
+                    return
+                if OSPF_hello in pkt:
+                    self.handleOspfHello(pwospf_pkt)
+                elif OSPF_LSU in pkt:
+                    self.handleOspfLSU(pwospf_pkt)
             else:
                 self.handleBadIP(pkt)
 
