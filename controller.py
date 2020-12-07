@@ -135,8 +135,9 @@ class MacLearningController(Thread):
         self.send(pkt)
 
     def handleOspfHello(self, pkt):
-        print("Evan got a Hello!")
-        self.mac_for_ip[pkt[IP].src] = pkt[Ether].src
+        # print("Evan got a Hello!")
+        # print(pkt[OSPF].router_id)
+        self.mac_for_ip[pkt[OSPF].router_id] = pkt[Ether].src
         self.port_for_mac[pkt[Ether].src] = pkt[CPUMetadata].srcPort
         # self.addMacAddr(pkt[Ether].src,pkt[IP].src,pkt[CPUMetadata].srcPort)
         # print("PACKET SOURCE: " + str(pkt[IP].src))
@@ -291,7 +292,10 @@ class MacLearningController(Thread):
         # Ignore packets that the CPU sends:
         if pkt[CPUMetadata].fromCpu == 1: return
 
+        
+
         if ARP in pkt:
+            # print("INT-DEBUG: GOT AN ARP PACKET")
             if pkt[ARP].op == ARP_OP_REQ:
                 if not self.packetInNetwork(pkt[ARP].psrc): # (ip2hex(pkt[ARP].psrc) & self.mask) != ip2hex(self.router_id):
                     return 
@@ -308,14 +312,12 @@ class MacLearningController(Thread):
                     # lg.debug('%s cannot parse this PWOSPF packet correctly\n' % self.sw.name)
                     return
                 if OSPF_hello in pwospf_pkt:
-                    print("Entered OSPF Hello!")
+                    # print("Entered OSPF Hello!")
                     self.handleOspfHello(pkt[Ether]/pkt[CPUMetadata]/pkt[IP]/pwospf_pkt)
                 elif OSPF_LSU in pwospf_pkt:
                     self.handleOspfLSU(pkt[Ether]/pkt[CPUMetadata]/pkt[IP]/pwospf_pkt)
             else:
                 self.handleBadIP(pkt)
-
-            
         else:
             self.handleUnknownPacket(pkt)
         

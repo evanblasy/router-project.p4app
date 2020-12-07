@@ -45,10 +45,10 @@ class PWOSPFRouter(P4RuntimeSwitch):
     def initTable(self):
         bcast_mgid = 1
         # ctrl_port = self.ctrl_args.get('ctrl_port', 1)
-        ctrl_port = 1
+        # ctrl_port = 1
         # Broadcast to ports except for 0 (lo) and ctrl_port
-        bcast_ports = [p for p in self.intfs.keys() if p not in [0, ctrl_port]]
-        self.addMulticastGroup(mgid=bcast_mgid, ports=bcast_ports)
+        # bcast_ports = [p for p in self.intfs.keys() if p not in [0, ctrl_port]]
+        self.addMulticastGroup(mgid=bcast_mgid, ports=range(2,MAX_PORT))
         self.insertTableEntry(table_name='MyIngress.fwd_l2',
                               match_fields={'hdr.ethernet.dstAddr': [
                                   "ff:ff:ff:ff:ff:ff"]},
